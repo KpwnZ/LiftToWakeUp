@@ -1,5 +1,8 @@
 #import <SpringBoard/SpringBoard.h>
 #import <CoreMotion/CoreMotion.h>
+// #import <IOKit/IOKitLib.h>
+#import <IOKit/pwr_mgt/IOPMLib.h>
+#import <IOKit/IOReturn.h>
 
 @interface SBHomeHardwareButtonActions : NSObject
 -(id)init;
@@ -16,15 +19,37 @@
 
 typedef NS_ENUM(NSInteger,DeviceMotionType){
     Portrait,
-    UpsideDown,
+    FaceUp,
+    FaceDown,
     LandscapeLeft,
     LandscapeRight,
     Unknown
 };
 
 static DeviceMotionType motionType = Unknown;
+#define isPuttingDownDevice(newMotion) (motionType == Portrait && newMotion == FaceUp)
+#define isTurningDownDevice(newMotion) (motionType != FaceDown && newMotion == FaceDown)
 
+@interface SystemSleepManager : NSObject
+{
+    IOPMAssertionID displaySleepAssertionID;
+    IOPMAssertionID idleSleepAssertionID;
+}
+-(void)disableOrEnableIdleSleep:(BOOL)arg1;
+@end
 
+@implementation SystemSleepManager
+-(void)disableOrEnableIdleSleep:(BOOL)arg1 {
+    if (!idleSleepAssertionID && arg1) {
+        // CFSTR("NoIdleSleepAssertion") 255
+        IOPMAssertionCreate(kIOPMAssertionTypeNoIdleSleep, kIOPMAssertionLevelOn, &idleSleepAssertionID);
+        NSLog(@"SystemSleepManager: disable system sleep");
+    } else {
+        IOPMAssertionRelease(idleSleepAssertionID);
+        idleSleepAssertionID = 0;
+    }
+}
+@end
 
 @implementation CMMotionManager(update)
 -(void)update {
@@ -36,7 +61,7 @@ static DeviceMotionType motionType = Unknown;
 }
 
 -(void)updateData {
-    [[%c(SBLockScreenManager) sharedInstance] wakeUp];
+    [[%c(SBLockScreenManager) sharedInstance] updateMotionType];
 }
 @end
 
@@ -46,10 +71,11 @@ static DeviceMotionType motionType = Unknown;
 -(id)init {
 
     //[[LiftToWakeUpManager alloc] init];
+    SystemSleepManager *ssm = [[SystemSleepManager alloc] init];
+    [ssm disableOrEnableIdleSleep:YES];
     self.motionManager = [[CMMotionManager alloc] init];
-    self.motionManager.deviceMotionUpdateInterval = 1 / 5.0;
+    self.motionManager.deviceMotionUpdateInterval = 1 / 25.0;
     [self.motionManager update];
-    
     [self.motionManager startDeviceMotionUpdatesToQueue:[NSOperationQueue mainQueue] withHandler:^(CMDeviceMotion *accelerometerData, NSError *error) {
         [self updateMotionType];
     }];
@@ -81,14 +107,26 @@ static DeviceMotionType motionType = Unknown;
 
     NSLog(@"DeviceMotionType updateMotionType x=%f y=%f z=%f", x, y, z);
 
-    if (fabs(x) < 0.45 && y < -0.45 && y > -1 && z < 0 && z < 60)
+    if (fabs(x) < 0.45 && y < -0.45 && y > -1 && z <= 0 && z > -0.6)
     {
         nowMotionType = Portrait;
+    }else if (fabs(y) <= 0.15 && z <= -0.8)
+    {
+        nowMotionType = FaceUp;
+    }else if (fabs(y) <= 0.15 && z >= 0.8)
+    {
+        nowMotionType = FaceDown;
     }
 
-    if (nowMotionType != motionType && nowMotionType != Unknown)
+    if (nowMotionType != motionType)
     {
-        [self wakeUp];
+        if (nowMotionType == Portrait)
+        {
+            [self wakeUp];
+        }else if (isPuttingDownDevice(nowMotionType) || isTurningDownDevice(nowMotionType))
+        {
+            [self lockDevice];
+        }
     }
     
     motionType = nowMotionType;
@@ -96,9 +134,26 @@ static DeviceMotionType motionType = Unknown;
 
 %new
 -(void)wakeUp {
+    if (![[UIApplication sharedApplication] isLocked])
+    {
+        return;
+    }
     while([[[%c(SBLockScreenManager) sharedInstance] dashBoardViewController] isInScreenOffMode]) {
         [[UIApplication sharedApplication] _simulateHomeButtonPress];
     }
     motionType = Unknown;
 }
+
+%new
+-(void)lockDevice {
+        if (![[UIApplication sharedApplication] isLocked])
+    {
+        return;
+    }
+    while(![[[%c(SBLockScreenManager) sharedInstance] dashBoardViewController] isInScreenOffMode]) {
+        [[UIApplication sharedApplication] _simulateLockButtonPress];
+    }
+    motionType = Unknown;
+}
+
 %end
