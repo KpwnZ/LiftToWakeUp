@@ -1,0 +1,9 @@
+Package: com.xcxiao.wakeitup
+Name: LiftToWakeUp
+Depends: mobilesubstrate
+Version: 0.0.1
+Architecture: iphoneos-arm
+Description: SpringBoard Lift to wake up.
+Maintainer: XCXiao
+Author: XCXiao
+Section: Tweaks
