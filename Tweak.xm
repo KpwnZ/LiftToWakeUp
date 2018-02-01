@@ -146,11 +146,11 @@ static DeviceMotionType motionType = Unknown;
 
 %new
 -(void)lockDevice {
-        if (![[UIApplication sharedApplication] isLocked])
+    if (![[UIApplication sharedApplication] isLocked])
     {
         return;
     }
-    while(![[[%c(SBLockScreenManager) sharedInstance] dashBoardViewController] isInScreenOffMode]) {
+    if(![[[%c(SBLockScreenManager) sharedInstance] dashBoardViewController] isInScreenOffMode]) { // it will take some time to lock screen, so while(screenOff) should be replaced.
         [[UIApplication sharedApplication] _simulateLockButtonPress];
     }
     motionType = Unknown;
